@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: snake-arena-familiar
+    name: pequisnake
     runtime: node
     buildCommand: npm install
     startCommand: npm start
