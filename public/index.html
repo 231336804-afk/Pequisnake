@@ -15,12 +15,43 @@ input{width:100%;padding:12px;border-radius:10px;border:1px solid #ffffff25;back
 <div id="menu" class="panel"><div class="card"><h1>Pequisnake</h1><div class="muted">v4.2 con 100 rivales automáticos y nombres aleatorios.</div><p>Nombre</p><input id="name" value="Jugador" maxlength="18"><div class="row"><div><p>Sala</p><input id="room" value="FAMILIA" maxlength="10"></div><div><p>Color</p><input id="color" type="color" value="#7cf29c"></div></div><button id="play" class="primary">Entrar a jugar</button></div></div>
 <div id="death" class="panel"><div class="card"><h2>Perdiste</h2><button id="again" class="primary">Reaparecer</button></div></div>
 <script>
-const c=document.getElementById("game"),ctx=c.getContext("2d"),coarse=matchMedia("(pointer:coarse)").matches||innerWidth<800;let DPR=Math.min(devicePixelRatio||1,1.5);
+const c=document.getElementById("game");
+const ctx=c.getContext("2d");
+const coarse=matchMedia("(pointer:coarse)").matches||innerWidth<800;
+const menuEl=document.getElementById("menu");
+const deathEl=document.getElementById("death");
+const roomHudEl=document.getElementById("roomHud");
+const scoreEl=document.getElementById("score");
+const posEl=document.getElementById("pos");
+const rankListEl=document.getElementById("rankList");
+const playBtn=document.getElementById("play");
+const againBtn=document.getElementById("again");
+const nameInput=document.getElementById("name");
+const roomInput=document.getElementById("room");
+const colorInput=document.getElementById("color");
+let DPR=Math.min(devicePixelRatio||1,1.5);
 function resize(){c.width=innerWidth*DPR;c.height=innerHeight*DPR;ctx.setTransform(DPR,0,0,DPR,0,0)}addEventListener("resize",resize);resize();
 let ws,myId,joined=false,joinData,state={world:4200,foods:[],players:[],ranking:[]},cam={x:2100,y:2100,zoom:1},ang=0,boosting=false;
-function connect(){ws=new WebSocket((location.protocol==="https:"?"wss:":"ws:")+"//"+location.host+"/ws");ws.onopen=()=>{if(joined)setTimeout(()=>send({t:"join",...joinData}),100)};ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.t==="hello")myId=m.id;if(m.t==="joined"){roomHud.textContent=m.room;menu.style.display="none"}if(m.t==="state"){state=m;const me=state.players.find(p=>p.id===myId);if(me){score.textContent=Number.isFinite(me.score)?me.score:Math.round(me.length||0);const i=state.ranking.findIndex(r=>r.id===myId);pos.textContent=i>=0?(i+1)+"/"+state.ranking.length:"-";if(joined&&!me.alive)death.style.display="flex"}rankList.innerHTML=state.ranking.map((r,i)=>`<div class="rankline ${r.isBot?'bot':''}">${i+1}. ${r.name} — ${Number.isFinite(r.score)?r.score:Math.round(r.length||0)}</div>`).join("")||"—"}};ws.onclose=()=>setTimeout(connect,1200)}connect();
+function connect(){ws=new WebSocket((location.protocol==="https:"?"wss:":"ws:")+"//"+location.host+"/ws");ws.onopen=()=>{if(joined&&joinData){playBtn.textContent="Entrando...";setTimeout(()=>send({t:"join",...joinData}),100)}else{playBtn.textContent="Entrar a jugar"}};ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.t==="hello")myId=m.id;if(m.t==="joined"){roomHudEl.textContent=m.room;menuEl.style.display="none";playBtn.textContent="Entrar a jugar"}if(m.t==="state"){state=m;const me=state.players.find(p=>p.id===myId);if(me){scoreEl.textContent=Number.isFinite(me.score)?me.score:Math.round(me.length||0);const i=state.ranking.findIndex(r=>r.id===myId);posEl.textContent=i>=0?(i+1)+"/"+state.ranking.length:"-";if(joined&&!me.alive)deathEl.style.display="flex"}rankListEl.innerHTML=state.ranking.map((r,i)=>`<div class="rankline ${r.isBot?'bot':''}">${i+1}. ${r.name} — ${Number.isFinite(r.score)?r.score:Math.round(r.length||0)}</div>`).join("")||"—"}};ws.onclose=()=>setTimeout(connect,1200)}connect();
 function send(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))}
-play.onclick=()=>{joinData={name:name.value.trim()||"Jugador",room:(room.value||"FAMILIA").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,10),color:color.value};joined=true;send({t:"join",...joinData})};again.onclick=()=>{send({t:"respawn"});death.style.display="none"};
+playBtn.addEventListener("click",()=>{
+ const playerName=nameInput.value.trim()||"Jugador";
+ const roomCode=(roomInput.value||"FAMILIA").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,10)||"FAMILIA";
+ const playerColor=colorInput.value||"#7cf29c";
+ roomInput.value=roomCode;
+ joinData={name:playerName,room:roomCode,color:playerColor};
+ joined=true;
+ if(ws&&ws.readyState===WebSocket.OPEN){
+   send({t:"join",...joinData});
+   playBtn.textContent="Entrando...";
+ }else{
+   playBtn.textContent="Conectando...";
+ }
+});
+againBtn.addEventListener("click",()=>{
+ send({t:"respawn"});
+ deathEl.style.display="none";
+});
 c.addEventListener("pointermove",e=>{if(!coarse)ang=Math.atan2(e.clientY-innerHeight/2,e.clientX-innerWidth/2)});c.addEventListener("pointerdown",()=>{if(!coarse)boosting=true});addEventListener("pointerup",()=>{if(!coarse)boosting=false});
 const stick=document.getElementById("stick"),knob=document.getElementById("knob");let sid=null;function sm(e){const r=stick.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;let dx=e.clientX-cx,dy=e.clientY-cy,d=Math.hypot(dx,dy)||1,m=40;if(d>m){dx=dx/d*m;dy=dy/d*m}knob.style.transform=`translate(${dx}px,${dy}px)`;if(Math.hypot(dx,dy)>8)ang=Math.atan2(dy,dx)}
 stick.addEventListener("pointerdown",e=>{sid=e.pointerId;stick.setPointerCapture(e.pointerId);sm(e)});stick.addEventListener("pointermove",e=>{if(e.pointerId===sid)sm(e)});stick.addEventListener("pointerup",e=>{sid=null;knob.style.transform="translate(0,0)"});
