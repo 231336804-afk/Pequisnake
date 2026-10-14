@@ -8,6 +8,21 @@ function cleanName(v){return String(v||"Jugador").replace(/[<>]/g,"").trim().sli
 function cleanColor(v){return /^#[0-9a-fA-F]{6}$/.test(String(v))?String(v):"#7cf29c"}
 function food(x=rand(50,WORLD-50),y=rand(50,WORLD-50),value=rand(.8,2.2)){return{x,y,value,r:3+value*1.4,h:Math.floor(rand(0,360))}}
 function botColor(){const p=["#ff6b6b","#4dabf7","#ffd43b","#69db7c","#b197fc","#ffa94d","#f783ac","#63e6be"];return p[Math.floor(Math.random()*p.length)]}
+function botName(){
+ const names=[
+  "Leo","Mia","Axel","Luna","Nico","Zoe","Max","Emma","Ian","Sofi",
+  "Dani","Noa","Alex","Gael","Iker","Nora","Milo","Sara","Teo","Vera",
+  "Mateo","Valen","Lucas","Alma","Bruno","Aitana","Diego","Renata","Hugo","Mara",
+  "Thiago","Olivia","Enzo","Elena","Dylan","Julia","Adri","Cami","Pablo","Ines",
+  "Rafa","Lia","Marco","Nina","Tomas","Eva","Santi","Maya","Alan","Clara",
+  "Beto","Lola","Gabi","Ari","Javi","Nahi","Romi","Mati","Fede","Isa",
+  "Kira","Liam","Sam","Vale","Emi","Tadeo","Luca","Nerea","Dario","Iris"
+ ];
+ const tags=["","X","Pro","MX","77","21","GG","YT","Neo","Max"];
+ const base=names[Math.floor(Math.random()*names.length)];
+ const tag=Math.random()<0.28?tags[Math.floor(Math.random()*tags.length)]:"";
+ return (base+tag).slice(0,18);
+}
 function makeSnake(id,name,color,isBot=false){
  const x=rand(500,WORLD-500),y=rand(500,WORLD-500),angle=rand(-Math.PI,Math.PI);
  const s={id,name,color,x,y,angle,targetAngle:angle,radius:11,baseSpeed:isBot?rand(2.65,2.95):3.1,boost:false,targetLength:isBot?rand(70,140):90,alive:true,points:[],isBot,aiTimer:0,score:0};
@@ -16,7 +31,7 @@ function makeSnake(id,name,color,isBot=false){
 }
 function makeRoom(code){const r={code,players:new Map(),foods:[],botSeq:0};for(let i=0;i<FOOD_TARGET;i++)r.foods.push(food());rooms.set(code,r);ensureBots(r);return r}
 function room(code){return rooms.get(code)||makeRoom(code)}
-function ensureBots(r){let n=[...r.players.values()].filter(p=>p.isBot).length;for(;n<BOT_TARGET;n++){const id="bot-"+r.code+"-"+(++r.botSeq);r.players.set(id,makeSnake(id,"Bot "+r.botSeq,botColor(),true))}}
+function ensureBots(r){let n=[...r.players.values()].filter(p=>p.isBot).length;for(;n<BOT_TARGET;n++){const id="bot-"+r.code+"-"+(++r.botSeq);r.players.set(id,makeSnake(id,botName(),botColor(),true))}}
 function kill(r,p){if(!p.alive)return;p.alive=false;p.boost=false;for(let i=0;i<p.points.length;i+=3){const q=p.points[i];r.foods.push(food(q.x+rand(-10,10),q.y+rand(-10,10),rand(1.1,2.8)))}if(p.isBot)setTimeout(()=>{const rr=rooms.get(r.code);if(rr)rr.players.set(p.id,makeSnake(p.id,p.name,p.color,true))},700)}
 function botAI(r,p,dt){
  p.aiTimer-=dt;if(p.aiTimer>0)return;p.aiTimer=rand(.18,.5);
