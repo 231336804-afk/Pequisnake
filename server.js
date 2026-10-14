@@ -57,7 +57,7 @@ function step(r,p,dt){
 function collide(r){const a=[...r.players.values()].filter(p=>p.alive);for(const p of a){for(const o of a){if(p===o)continue;for(let i=5;i<o.points.length;i+=3){const q=o.points[i],dx=p.x-q.x,dy=p.y-q.y,rr=p.radius+o.radius*.68;if(dx*dx+dy*dy<rr*rr){kill(r,p);break}}if(!p.alive)break}}}
 function packet(r,id){
  const focus=r.players.get(id),foods=[];for(const f of r.foods){if(!focus||((f.x-focus.x)**2+(f.y-focus.y)**2<1300**2)){foods.push([Math.round(f.x),Math.round(f.y),+f.r.toFixed(1),f.h]);if(foods.length>=MAX_FOOD_PACKET)break}}
- const ranking=[...r.players.values()].filter(p=>p.alive).sort((a,b)=>b.score-a.score||b.targetLength-a.targetLength).slice(0,10).map(p=>({id:p.id,name:p.name,score:p.score,isBot:p.isBot}));
+ const ranking=[...r.players.values()].filter(p=>p.alive).sort((a,b)=>b.score-a.score||b.targetLength-a.targetLength).slice(0,10).map(p=>({id:p.id,name:p.name,score:Number.isFinite(p.score)?p.score:0,length:Math.round(p.targetLength||0),isBot:p.isBot}));
  return{t:"state",room:r.code,world:WORLD,foods,ranking,players:[...r.players.values()]
  .filter(p=>!focus || p.id===id || ((p.x-focus.x)**2+(p.y-focus.y)**2<1500**2))
  .map(p=>({id:p.id,name:p.name,color:p.color,x:+p.x.toFixed(1),y:+p.y.toFixed(1),angle:+p.angle.toFixed(3),radius:p.radius,length:+p.targetLength.toFixed(1),score:p.score,alive:p.alive,isBot:p.isBot,points:p.points.filter((_,i)=>i%3===0).map(q=>[Math.round(q.x),Math.round(q.y)])}))}
