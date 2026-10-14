@@ -29,7 +29,7 @@ function makeSnake(id,name,color,isBot=false){
  for(let i=0;i<Math.max(8,Math.floor(s.targetLength/6));i++)s.points.push({x:x-Math.cos(angle)*i*6,y:y-Math.sin(angle)*i*6});
  return s;
 }
-function makeRoom(code){const r={code,players:new Map(),foods:[],botSeq:0};for(let i=0;i<FOOD_TARGET;i++)r.foods.push(food());rooms.set(code,r);ensureBots(r);return r}
+function makeRoom(code){const r={code,players:new Map(),foods:[],botSeq:0};for(let i=0;i<FOOD_TARGET;i++)r.foods.push(food());rooms.set(code,r);return r}
 function room(code){return rooms.get(code)||makeRoom(code)}
 function ensureBots(r){let n=[...r.players.values()].filter(p=>p.isBot).length;for(;n<BOT_TARGET;n++){const id="bot-"+r.code+"-"+(++r.botSeq);r.players.set(id,makeSnake(id,botName(),botColor(),true))}}
 function kill(r,p){if(!p.alive)return;p.alive=false;p.boost=false;for(let i=0;i<p.points.length;i+=3){const q=p.points[i];r.foods.push(food(q.x+rand(-10,10),q.y+rand(-10,10),rand(1.1,2.8)))}if(p.isBot)setTimeout(()=>{const rr=rooms.get(r.code);if(rr)rr.players.set(p.id,makeSnake(p.id,p.name,p.color,true))},700)}
@@ -54,7 +54,48 @@ function step(r,p,dt){
  for(let i=1;i<p.points.length;i++){const a=p.points[i-1],b=p.points[i],dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||.0001;b.x=a.x+dx/d*6;b.y=a.y+dy/d*6}
  for(let i=r.foods.length-1;i>=0;i--){const f=r.foods[i],dx=f.x-p.x,dy=f.y-p.y,rr=p.radius+f.r+3;if(dx*dx+dy*dy<rr*rr){p.targetLength+=f.value*5.2;p.score+=Math.round(f.value*10);r.foods.splice(i,1);r.foods.push(food())}}
 }
-function collide(r){const a=[...r.players.values()].filter(p=>p.alive);for(const p of a){for(const o of a){if(p===o)continue;for(let i=5;i<o.points.length;i+=3){const q=o.points[i],dx=p.x-q.x,dy=p.y-q.y,rr=p.radius+o.radius*.68;if(dx*dx+dy*dy<rr*rr){kill(r,p);break}}if(!p.alive)break}}}
+function collide(r){
+ const cellSize=180;
+ const grid=new Map();
+ const alive=[...r.players.values()].filter(p=>p.alive);
+
+ function key(cx,cy){return cx+","+cy}
+ function addToGrid(p,point,startIndex){
+   const cx=Math.floor(point.x/cellSize),cy=Math.floor(point.y/cellSize);
+   const k=key(cx,cy);
+   if(!grid.has(k))grid.set(k,[]);
+   grid.get(k).push({owner:p,point,startIndex});
+ }
+
+ // Index sampled body points in spatial cells.
+ for(const p of alive){
+   for(let i=5;i<p.points.length;i+=4){
+     addToGrid(p,p.points[i],i);
+   }
+ }
+
+ // A head only checks its own cell and 8 neighboring cells.
+ for(const p of alive){
+   if(!p.alive)continue;
+   const cx=Math.floor(p.x/cellSize),cy=Math.floor(p.y/cellSize);
+   outer:
+   for(let ox=-1;ox<=1;ox++){
+     for(let oy=-1;oy<=1;oy++){
+       const list=grid.get(key(cx+ox,cy+oy));
+       if(!list)continue;
+       for(const item of list){
+         if(item.owner===p || !item.owner.alive)continue;
+         const dx=p.x-item.point.x,dy=p.y-item.point.y;
+         const rr=p.radius+item.owner.radius*.68;
+         if(dx*dx+dy*dy<rr*rr){
+           kill(r,p);
+           break outer;
+         }
+       }
+     }
+   }
+ }
+}
 function packet(r,id){
  const focus=r.players.get(id),foods=[];for(const f of r.foods){if(!focus||((f.x-focus.x)**2+(f.y-focus.y)**2<1300**2)){foods.push([Math.round(f.x),Math.round(f.y),+f.r.toFixed(1),f.h]);if(foods.length>=MAX_FOOD_PACKET)break}}
  const ranking=[...r.players.values()].filter(p=>p.alive).sort((a,b)=>b.score-a.score||b.targetLength-a.targetLength).slice(0,10).map(p=>({id:p.id,name:p.name,score:Number.isFinite(p.score)?p.score:0,length:Math.round(p.targetLength||0),isBot:p.isBot}));
@@ -66,7 +107,7 @@ const server=http.createServer((req,res)=>{if(req.url==="/health"){res.writeHead
 const wss=new WebSocket.Server({server,path:"/ws"});
 wss.on("connection",ws=>{ws.id=crypto.randomBytes(8).toString("hex");ws.roomCode=null;ws.send(JSON.stringify({t:"hello",id:ws.id}));
  ws.on("message",raw=>{let m;try{m=JSON.parse(raw.toString())}catch{return}
-  if(m.t==="join"){if(ws.roomCode){const old=rooms.get(ws.roomCode);if(old)old.players.delete(ws.id)}const code=cleanRoom(m.room),r=room(code);r.players.set(ws.id,makeSnake(ws.id,cleanName(m.name),cleanColor(m.color),false));ws.roomCode=code;ensureBots(r);ws.send(JSON.stringify({t:"joined",room:code}));return}
+  if(m.t==="join"){if(ws.roomCode){const old=rooms.get(ws.roomCode);if(old)old.players.delete(ws.id)}const code=cleanRoom(m.room),r=room(code);r.players.set(ws.id,makeSnake(ws.id,cleanName(m.name),cleanColor(m.color),false));ws.roomCode=code;ws.send(JSON.stringify({t:"joined",room:code}));setImmediate(()=>ensureBots(r));return}
   if(!ws.roomCode)return;const r=rooms.get(ws.roomCode),p=r&&r.players.get(ws.id);if(!p)return;
   if(m.t==="input"){if(Number.isFinite(m.angle))p.targetAngle=m.angle;p.boost=!!m.boost}
   if(m.t==="respawn"&&!p.alive){const np=makeSnake(ws.id,p.name,p.color,false);r.players.set(ws.id,np)}
