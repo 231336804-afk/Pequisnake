@@ -1,1 +1,223 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0b1020">
+<title>Snake Arena Familiar</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0b1020;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#fff;touch-action:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+.panel{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:18px;background:#060916c9;z-index:20}
+.card{width:min(92vw,390px);background:#12192b;border:1px solid #ffffff20;border-radius:22px;padding:22px;box-shadow:0 24px 80px #000a}
+h1,h2{margin:0 0 8px}.muted{font-size:13px;opacity:.72;line-height:1.4}
+label{display:block;font-size:12px;opacity:.8;margin-top:13px;margin-bottom:5px}
+input,button{font:inherit}
+input[type=text]{width:100%;background:#090f1e;border:1px solid #ffffff26;border-radius:12px;padding:12px;color:#fff;font-size:16px;text-transform:none}
+.row{display:grid;grid-template-columns:1fr 70px;gap:12px;align-items:end}
+input[type=color]{width:70px;height:46px;border:0;border-radius:10px;background:transparent;padding:0}
+button{border:0;border-radius:12px;padding:13px 15px;font-weight:800;cursor:pointer}
+.primary{width:100%;margin-top:16px;background:#7cf29c;color:#07110a;font-size:16px}
+#hud{position:fixed;top:max(10px,env(safe-area-inset-top));left:10px;z-index:5;background:#0007;border:1px solid #ffffff15;border-radius:13px;padding:9px 11px;font-size:13px;backdrop-filter:blur(7px)}
+#rank{position:fixed;top:max(10px,env(safe-area-inset-top));right:10px;z-index:5;background:#0007;border:1px solid #ffffff15;border-radius:13px;padding:9px 11px;font-size:12px;min-width:125px;max-width:42vw}
+#rank b{display:block;margin-bottom:4px}.rankline{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#mobileControls{display:none}
+#stickBase{position:fixed;left:24px;bottom:max(24px,env(safe-area-inset-bottom));width:128px;height:128px;border-radius:50%;background:#ffffff13;border:2px solid #ffffff22;z-index:10}
+#stickKnob{position:absolute;left:39px;top:39px;width:50px;height:50px;border-radius:50%;background:#ffffff55;border:2px solid #ffffff65}
+#boost{position:fixed;right:24px;bottom:max(36px,env(safe-area-inset-bottom));width:94px;height:94px;border-radius:50%;z-index:10;background:#ffcf5cdd;color:#241900;font-size:15px;box-shadow:0 8px 30px #0007}
+#status{position:fixed;left:50%;transform:translateX(-50%);top:max(12px,env(safe-area-inset-top));z-index:8;background:#0009;border-radius:20px;padding:7px 12px;font-size:12px;display:none}
+#death{display:none}
+.code{font-weight:900;letter-spacing:1px}
+@media (pointer:coarse),(max-width:800px){#mobileControls{display:block}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
 
+<div id="hud">Sala: <b id="roomHud">-</b><br>Longitud: <b id="score">0</b> · Posición: <b id="position">-</b></div>
+<div id="rank"><b>Clasificación</b><div id="rankList">—</div></div>
+<div id="status">Reconectando…</div>
+
+<div id="mobileControls">
+  <div id="stickBase"><div id="stickKnob"></div></div>
+  <button id="boost">TURBO</button>
+</div>
+
+<div id="menu" class="panel">
+  <div class="card">
+    <h1>Snake Arena</h1>
+    <div class="muted">Juega con tu familia desde móvil o computadora. Todos deben escribir el mismo código de sala.</div>
+    <label>Nombre de tu serpiente</label>
+    <input id="name" type="text" maxlength="18" value="Jugador" autocomplete="off">
+    <div class="row">
+      <div>
+        <label>Código de sala</label>
+        <input id="room" type="text" maxlength="10" value="FAMILIA" autocomplete="off" autocapitalize="characters">
+      </div>
+      <div>
+        <label>Color</label>
+        <input id="color" type="color" value="#7cf29c">
+      </div>
+    </div>
+    <button class="primary" id="play">Entrar a la sala</button>
+  </div>
+</div>
+
+<div id="death" class="panel">
+  <div class="card">
+    <h2>Perdiste</h2>
+    <div class="muted">Tu serpiente chocó. Puedes volver a entrar en la misma sala.</div>
+    <button class="primary" id="again">Reaparecer</button>
+  </div>
+</div>
+
+<script>
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
+const menu=document.getElementById("menu"),death=document.getElementById("death");
+const score=document.getElementById("score"),positionEl=document.getElementById("position");
+const roomHud=document.getElementById("roomHud"),rankList=document.getElementById("rankList"),statusEl=document.getElementById("status");
+const coarse=matchMedia("(pointer:coarse)").matches || innerWidth<800;
+
+let DPR=Math.min(devicePixelRatio||1,2);
+function resize(){canvas.width=innerWidth*DPR;canvas.height=innerHeight*DPR;ctx.setTransform(DPR,0,0,DPR,0,0)}
+addEventListener("resize",resize);resize();
+
+let ws=null,myId=null,joined=false,joinData=null,retry=0;
+let state={world:4200,foods:[],players:[],ranking:[]};
+let cam={x:2100,y:2100,zoom:1};
+let controlAngle=0,boosting=false;
+
+function connect(){
+  const proto=location.protocol==="https:"?"wss:":"ws:";
+  ws=new WebSocket(proto+"//"+location.host+"/ws");
+
+  ws.onopen=()=>{
+    retry=0;statusEl.style.display="none";
+    if(joined && joinData) setTimeout(()=>send({t:"join",...joinData}),80);
+  };
+  ws.onmessage=e=>{
+    const m=JSON.parse(e.data);
+    if(m.t==="hello"){myId=m.id}
+    if(m.t==="joined"){
+      roomHud.textContent=m.room;
+      menu.style.display="none";
+    }
+    if(m.t==="state"){
+      state=m;
+      const me=state.players.find(p=>p.id===myId);
+      if(me){
+        score.textContent=Math.round(me.length);
+        const idx=state.ranking.findIndex(r=>r.id===myId);
+        positionEl.textContent=idx>=0?(idx+1)+"/"+state.ranking.length:"-";
+        if(joined && !me.alive)death.style.display="flex";
+      }
+      rankList.innerHTML=state.ranking.slice(0,5).map((r,i)=>
+        `<div class="rankline">${i+1}. ${escapeHtml(r.name)} · ${r.length}</div>`
+      ).join("")||"—";
+    }
+  };
+  ws.onclose=()=>{
+    statusEl.style.display=joined?"block":"none";
+    const delay=Math.min(8000,500*Math.pow(2,retry++));
+    setTimeout(connect,delay);
+  };
+}
+function send(obj){if(ws&&ws.readyState===1)ws.send(JSON.stringify(obj))}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+connect();
+
+document.getElementById("play").onclick=()=>{
+  const name=document.getElementById("name").value.trim()||"Jugador";
+  const room=(document.getElementById("room").value||"FAMILIA").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,10)||"FAMILIA";
+  const color=document.getElementById("color").value;
+  document.getElementById("room").value=room;
+  joinData={name,room,color};joined=true;
+  send({t:"join",...joinData});
+};
+document.getElementById("again").onclick=()=>{
+  send({t:"respawn"});death.style.display="none";
+};
+
+canvas.addEventListener("pointermove",e=>{
+  if(coarse)return;
+  controlAngle=Math.atan2(e.clientY-innerHeight/2,e.clientX-innerWidth/2);
+});
+canvas.addEventListener("pointerdown",()=>{if(!coarse)boosting=true});
+addEventListener("pointerup",()=>{if(!coarse)boosting=false});
+
+const base=document.getElementById("stickBase"),knob=document.getElementById("stickKnob");
+let stickId=null;
+function stickMove(e){
+  const r=base.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
+  let dx=e.clientX-cx,dy=e.clientY-cy;
+  const max=42,d=Math.hypot(dx,dy)||1;
+  if(d>max){dx=dx/d*max;dy=dy/d*max}
+  knob.style.transform=`translate(${dx}px,${dy}px)`;
+  if(Math.hypot(dx,dy)>8)controlAngle=Math.atan2(dy,dx);
+}
+base.addEventListener("pointerdown",e=>{stickId=e.pointerId;base.setPointerCapture(e.pointerId);stickMove(e)});
+base.addEventListener("pointermove",e=>{if(e.pointerId===stickId)stickMove(e)});
+function stickEnd(e){if(e.pointerId!==stickId)return;stickId=null;knob.style.transform="translate(0,0)"}
+base.addEventListener("pointerup",stickEnd);base.addEventListener("pointercancel",stickEnd);
+
+const boost=document.getElementById("boost");
+boost.addEventListener("pointerdown",e=>{e.preventDefault();boosting=true});
+boost.addEventListener("pointerup",()=>boosting=false);
+boost.addEventListener("pointercancel",()=>boosting=false);
+boost.addEventListener("pointerleave",()=>boosting=false);
+
+setInterval(()=>{if(joined)send({t:"input",angle:controlAngle,boost:boosting})},50);
+
+const sx=x=>(x-cam.x)*cam.zoom+innerWidth/2;
+const sy=y=>(y-cam.y)*cam.zoom+innerHeight/2;
+
+function render(){
+  ctx.fillStyle="#0b1020";ctx.fillRect(0,0,innerWidth,innerHeight);
+  const me=state.players.find(p=>p.id===myId);
+  if(me){
+    cam.x+=(me.x-cam.x)*.15;cam.y+=(me.y-cam.y)*.15;
+    const target=Math.max(.55,Math.min(1.05,1.14-Math.log10(me.length/80+1)*.27));
+    cam.zoom+=(target-cam.zoom)*.06;
+  }
+
+  const step=80*cam.zoom;
+  const ox=(((-cam.x*cam.zoom+innerWidth/2)%step)+step)%step;
+  const oy=(((-cam.y*cam.zoom+innerHeight/2)%step)+step)%step;
+  ctx.strokeStyle="#ffffff09";ctx.lineWidth=1;ctx.beginPath();
+  for(let x=ox;x<innerWidth;x+=step){ctx.moveTo(x,0);ctx.lineTo(x,innerHeight)}
+  for(let y=oy;y<innerHeight;y+=step){ctx.moveTo(0,y);ctx.lineTo(innerWidth,y)}
+  ctx.stroke();
+
+  ctx.strokeStyle="#ffffff25";ctx.lineWidth=4;
+  ctx.strokeRect(sx(0),sy(0),state.world*cam.zoom,state.world*cam.zoom);
+
+  for(const f of state.foods){
+    const X=sx(f[0]),Y=sy(f[1]);
+    if(X<-15||X>innerWidth+15||Y<-15||Y>innerHeight+15)continue;
+    ctx.beginPath();ctx.fillStyle=`hsl(${f[3]} 95% 65%)`;ctx.arc(X,Y,f[2]*cam.zoom,0,Math.PI*2);ctx.fill();
+  }
+
+  const ps=[...state.players].filter(p=>p.alive).sort((a,b)=>a.length-b.length);
+  for(const p of ps){
+    if(!p.points.length)continue;
+    ctx.lineCap="round";ctx.lineJoin="round";ctx.strokeStyle=p.color;ctx.lineWidth=p.radius*2*cam.zoom;
+    ctx.beginPath();
+    p.points.forEach((q,i)=>{const X=sx(q[0]),Y=sy(q[1]);i?ctx.lineTo(X,Y):ctx.moveTo(X,Y)});
+    ctx.stroke();
+
+    const X=sx(p.x),Y=sy(p.y),r=p.radius*cam.zoom,fx=Math.cos(p.angle),fy=Math.sin(p.angle),px=-fy,py=fx;
+    for(const side of [-1,1]){
+      const ex=X+fx*r*.42+px*r*.44*side,ey=Y+fy*r*.42+py*r*.44*side;
+      ctx.beginPath();ctx.fillStyle="#fff";ctx.arc(ex,ey,r*.28,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.fillStyle="#111";ctx.arc(ex+fx*r*.08,ey+fy*r*.08,r*.13,0,Math.PI*2);ctx.fill();
+    }
+    ctx.font=`${Math.max(11,13*cam.zoom)}px system-ui`;ctx.fillStyle="#fff";ctx.textAlign="center";
+    ctx.fillText(p.name,X,Y-r-9);
+  }
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+</script>
+</body>
+</html>
